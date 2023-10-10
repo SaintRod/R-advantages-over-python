@@ -1,8 +1,7 @@
 R advantages over python
 ================
 Iyar Lin
-
-19 May, 2021
+16 June, 2022
 
 -   [Motivation](#motivation)
     -   [How to contribute](#how-to-contribute)
@@ -32,6 +31,7 @@ Iyar Lin
     -   [Code autocompletion](#code-autocompletion)
     -   [Console](#console)
     -   [Running code line by line](#running-code-line-by-line)
+    -   [Table viewing is interactive](#table-viewing-is-interactive)
     -   [Variable explorer](#variable-explorer)
     -   [Debugger](#debugger)
     -   [Installation and dependency
@@ -42,6 +42,9 @@ Iyar Lin
     python](#r-is-just-as-capable-for-ml-if-not-better-than-python)
     -   [sklearn does not support categorical variables in decision
         trees](#sklearn-does-not-support-categorical-variables-in-decision-trees)
+-   [Time series](#time-series)
+    -   [Feature extraction for clustering or search unusual time
+        series](#feature-extraction-for-clustering-or-search-unusual-time-series)
 -   [python has no list equivalent
     class](#python-has-no-list-equivalent-class)
 -   [Package management and
@@ -58,8 +61,8 @@ Iyar Lin
 
 <br>
 
-*"don’t be fooled by the hype python’s got*  
-*R still R still is the tool you want"*
+*“don’t be fooled by the hype python’s got*  
+*R still R still is the tool you want”*
 
 ![dont be fooled](stuff/dont_be_fooled.gif)
 
@@ -79,7 +82,7 @@ them in this repo I try to avoid:
 
 I’m adding examples to this repo as I encounter them. There are areas
 such as dashboards and apps, advanced statistics or production
-environemnts with which I’m less familiar with. If you’d like to add
+environments with which I’m less familiar with. If you’d like to add
 examples, including where python has the edge over R (there’s a small
 [section](#python_better_than_r) for that) feel free to add them to this
 README and open a pull request.
@@ -101,7 +104,10 @@ confusing pandas is. I hope by the end of this section you’ll find merit
 in my hypothesis.
 
 <figure>
-<img src="stuff/Screen%20Shot%202021-04-18%20at%2021.44.41.png" width="500" alt="pandas vs dplyr questions on stack overflow" /><figcaption aria-hidden="true">pandas vs dplyr questions on stack overflow</figcaption>
+<img src="stuff/Screen%20Shot%202021-04-18%20at%2021.44.41.png"
+width="500" alt="pandas vs dplyr questions on stack overflow" />
+<figcaption aria-hidden="true">pandas vs dplyr questions on stack
+overflow</figcaption>
 </figure>
 
 <a name="aggregation"></a>
@@ -156,6 +162,9 @@ DataFrame method one could skip the *agg* method altogether using:
 ``` python
 iris.groupby('Species')['Sepal.Length'].mean()
 ```
+
+The above demonstrated again how confusing pandas can be with all those
+different ways of doing the same thing.
 
 ### Multiple input variables (weighted average example)
 
@@ -269,8 +278,40 @@ on that).
 Let’s say we’d like to calculate the mean and max sepal length, and the
 min sepal width.
 
-pandas has a very different behavior when the data frame is grouped or
-not. When it’s ungrouped:
+In dplyr it’s easy enough:
+
+``` r
+iris %>% summarise(
+  sepal_length_mean = mean(Sepal.Length), 
+  sepal_length_max = max(Sepal.Length), 
+  sepal_width_min = min(Sepal.Width))
+```
+
+    ##   sepal_length_mean sepal_length_max sepal_width_min
+    ## 1          5.843333              7.9               2
+
+If you were to group it by Species for example, you’d get the exact same
+data frame, only this time with a row per each species like you’d
+expect:
+
+``` r
+iris %>% 
+  group_by(Species) %>% 
+  summarise(
+  sepal_length_mean = mean(Sepal.Length), 
+  sepal_length_max = max(Sepal.Length), 
+  sepal_width_min = min(Sepal.Width))
+```
+
+    ## # A tibble: 3 × 4
+    ##   Species    sepal_length_mean sepal_length_max sepal_width_min
+    ##   <chr>                  <dbl>            <dbl>           <dbl>
+    ## 1 setosa                  5.01              5.8             2.3
+    ## 2 versicolor              5.94              7               2  
+    ## 3 virginica               6.59              7.9             2.2
+
+In pandas you get a very different behavior when the data frame is
+grouped or not. When it’s ungrouped:
 
 ``` python
 (
@@ -280,13 +321,13 @@ not. When it’s ungrouped:
 ```
 
     ##       Sepal.Length  Sepal.Width
-    ## max       7.900000          NaN
     ## mean      5.843333          NaN
+    ## max       7.900000          NaN
     ## min            NaN          2.0
 
-We can see that the functions were stored in the index while the
+We can see that the function names were stored in the index while the
 variables on which they were operated on are in the columns. This
-results in all those NaNs.
+results in all those pesky NaNs.
 
 If we were to apply those functions to a grouped data frame however:
 
@@ -312,6 +353,21 @@ functions and variables were moved to the column multi index. It prints
 nicely but also begs the question which you’ll have go search stack
 overflow of how do you rename those columns or select them by name.
 
+Well what if you just want to perform several aggregations without
+grouping? Only way I found doing that was:
+
+``` python
+(
+  iris
+  .groupby(lambda x: 1)
+  .agg({'Sepal.Length':['mean', 'max'], 'Sepal.Width':'min'})
+)
+```
+
+    ##   Sepal.Length      Sepal.Width
+    ##           mean  max         min
+    ## 1     5.843333  7.9         2.0
+
 ## Window functions
 
 ### Aggregation over a window
@@ -325,7 +381,7 @@ iris.assign(mean_sepal = lambda x: x.groupby('Species')['Sepal.Length'].transfor
 ```
 
 We can see that this requires a dedicated method (*transform*), compared
-with dplyr which only requires adding a group\_by:
+with dplyr which only requires adding a group_by:
 
 ``` r
 iris %>%
@@ -373,12 +429,22 @@ In dplyr it’s pretty straight forward:
 iris %>%
   arrange(Species, Sepal.Width) %>%
   group_by(Species) %>%
-  mutate(expanding_sepal_sum = sapply(1:n(), function(x) sum(Sepal.Length[1:x])))
+  mutate(expanding_sepal_sum = cumsum(Sepal.Length))
 ```
 
-Notice we don’t need to memorize any additional functions/methods. You
-find a solution using ubiquitous tools (e.g. sapply) and just plug it in
-the dplyr chain.
+Generally for a function `f` we can use sapply like so:
+
+``` r
+f <- function(x) median(x) + 1
+iris %>%
+  arrange(Species, Sepal.Width) %>%
+  group_by(Species) %>%
+  mutate(expanding_median_plus_1 = sapply(1:n(), function(x) f(Sepal.Length[1:x])))
+```
+
+Notice we don’t need to memorize any additional functions/methods. One
+finds a solution using ubiquitous tools (e.g. sapply) and just plugs it
+in the dplyr chain.
 
 In pandas we’ll have to search stack overflow to come up with the
 *expanding* method:
@@ -539,7 +605,7 @@ df <- tibble(s1=c(NA,NA,6,9,9),s2=c(NA,8,7,9,9))
 df %>% mutate(s3=coalesce(s1,s2,0))
 ```
 
-    ## # A tibble: 5 x 3
+    ## # A tibble: 5 × 3
     ##      s1    s2    s3
     ##   <dbl> <dbl> <dbl>
     ## 1    NA    NA     0
@@ -570,8 +636,8 @@ your code. See below how that looks like:
 ![autocompletion](stuff/autocompletion.gif)
 
 In pandas you pass strings when you select variables, use the *agg*,
-*sort\_values*, *query* and *groupby* methods. In all those cases - you
-don’t get variable autocompletion.
+*sort_values*, *query* and *groupby* methods. In all those cases - you
+don’t get variable auto-completion.
 
 ## When you learn dplyr you can also leverage data.table, spark, postgres and many others
 
@@ -580,7 +646,7 @@ and remote data bases) you’ll have to learn another package to tackle
 them.
 
 Dplyr users however can use the same syntax to tackle many use cases
-using various other languages as backends. Granted, for advanced usage
+using various other languages as back-ends. Granted, for advanced usage
 one would probably have to resort to more dedicated API’s or use the
 native language itself. But for the usual use cases of filtering,
 selecting, aggregating etc using dplyr syntax should work fine.
@@ -623,7 +689,7 @@ steam](https://iyarlin.medium.com/data-table-speed-with-dplyr-syntax-yes-we-can-
 
 This one might be a bit subjective, but for me pandas index always seems
 like much more of nuisance than useful. I encourage the reader to check
-how many times they use the *reset\_index* method in their code. Other
+how many times they use the *reset_index* method in their code. Other
 than some niceties relating to how the data frame is printed (e.g. multi
 indeces, see [this](#multi_index) for example) I can’t think of a use
 case where an index is really needed.
@@ -652,13 +718,13 @@ We can see that:
 
 1.  When calling functions you get documentation of arguments on the go,
     both overview and detailed in pop-up windows  
-2.  Used arguments don’t show up in the autocompletion (after setting x
+2.  Used arguments don’t show up in the auto-completion (after setting x
     it doesn’t show up again)  
 3.  When calling functions in a dplyr chain you have the data frame
     variables listed and autocompleted (thanks to data masking)
 
-In contrast see below the autocompletion results for pandas DataFrame in
-jupyter notebooks:
+In contrast see below the auto-completion results for pandas DataFrame
+in jupyter notebooks:
 
 ![Jupyter notebook autocompletion for padnas
 DataFrame](stuff/jupyter_autocompletion.png) We can see you get a long
@@ -678,7 +744,7 @@ debug a chunk of code. See an example below:
 
 <a name="previous_example"></a>
 
-![line\_by\_line](stuff/function_error.gif)
+![line_by_line](stuff/function_error.gif)
 
 In jupyter notebooks you’d have to copy each line separately to a new
 cell, fix indentation and run it. You can’t even just copy it to a
@@ -689,6 +755,18 @@ Rstudio, we also see a run status bar on the left showing you exactly
 where the error occurred when running the chunk as a whole (which can
 also be useful when running big chunks to know where in the chunk your
 code runs right now).
+
+Using Rstudio version 1.4.1106 on Mac I can also run python code line by
+line.
+
+## Table viewing is interactive
+
+When viewing tables with lots of rows it’s useful to be able to scroll
+them row wise:
+
+![table view](stuff/table_view.gif)
+
+In jupyter you can only scroll column wise.
 
 ## Variable explorer
 
@@ -821,6 +899,282 @@ bad splits with the same specie in different leaves. This can have
 serious implications, especially in cases where categories with a large
 number of levels are present in the dataset.
 
+# Time series
+
+While some effort is underway to close the gap (see for example
+[pmdarima](https://github.com/alkaline-ml/pmdarima) package which aims
+to imitate R’s auto.arima) python’s packages for time series analysis,
+especially in more classic contexts like exponential smoothing are still
+way less developed.
+
+Of course,there are models of classical arima and models from the family
+of exponential smoothing (ETS) in statmodels,but they all require
+painstaking manual settings of hyperparameters (p, d,q,P, D, Q) of each
+time series or parameters from the family of exponential models.
+
+The realities of forecasting in the conditions of modern business are
+such that there are many (very many) time series, they are all of
+different lengths, many of them are far from stationary and often
+contain omissions and statistical outliers.
+
+A single framework is required that could decide for itself for each
+time series what is more appropriate model (ARIMA, regression, theta,
+prophet or one of the representatives of the ETC family) not to mention
+not to manually configure the parameters of ARIMA/ETC/… for each time
+series.
+
+This framework should contain convenient tools for visualizing a variety
+of time series and model prediction results, and the code should be
+concise and readable (which is not enough in python)
+
+This framework should contain convenient tools for cross-validation of
+time series and building different models for each time series in
+conditions when there are many time series.
+
+This framework should have tools for hierarchical forecasting: this is
+when the time series of the detailed (lower) level are aggregated to
+different levels up in time (per week, month, year), by product (brand,
+category, etc.) or by customers (staff, sales channel, etc.) and then
+the models, having learned at the levels above, transmit the found
+patterns to the models of the lower level, which they cannot see from
+their height.
+
+This framework should be able to extract characteristics from each time
+series (regardless of their length and nature) so that later clustering
+of time series can be done based on these characteristics.
+
+This collection of packages is called
+[tydieverts](https://tidyverts.org/) and the book was written by Rob
+Hyndman, well-known in the circles of forecasting specialists, already
+the 3rd edition [Forecasting: Principles and
+Practice](https://otexts.com/fpp3/) in accordance with the evolution of
+packages. (By the way, statmodels likes to refer to this author in the
+help for their forecasting functions).
+
+The concept of the tydiverts ecosystem is completely identical to the
+concept of the [tidyverse](https://www.tidyverse.org/) ecosystem and,
+accordingly, everything is compatible between these two families, which
+gives explosive performance and code readability.
+
+Below is an example of forecasting a set of time series by a set of
+models based on the fable package
+
+``` r
+pckgs <- c('fable','fable.prophet','tsibble','feasts')
+# install.packages(pckgs) # install packages of 'tidyverts' ecosystem
+lapply(X = c(pckgs,'tidyverse'), FUN = library, character.only = TRUE) # load 'tidyverts' + 'tidyverse' packages
+```
+
+``` r
+# extract and filter multiple timeseries data frame from tsibble datasets
+data(tourism,package = 'tsibble')
+tourism_melb <- tourism %>% filter(Region == "Melbourne",State=="Victoria") %>% select(-Region,-State)
+tourism_melb # you can see "Key: Purpose" in title (4 time series groups:Business,Holiday,Visiting,Other), see tsibble docs about create key
+```
+
+    ## # A tsibble: 320 x 3 [1Q]
+    ## # Key:       Purpose [4]
+    ##    Quarter Purpose  Trips
+    ##      <qtr> <chr>    <dbl>
+    ##  1 1998 Q1 Business  405.
+    ##  2 1998 Q2 Business  408.
+    ##  3 1998 Q3 Business  486.
+    ##  4 1998 Q4 Business  429.
+    ##  5 1999 Q1 Business  361.
+    ##  6 1999 Q2 Business  486.
+    ##  7 1999 Q3 Business  359.
+    ##  8 1999 Q4 Business  426.
+    ##  9 2000 Q1 Business  495.
+    ## 10 2000 Q2 Business  499.
+    ## # … with 310 more rows
+
+``` r
+tourism_melb %>% autoplot(.vars = Trips) # plot multiple timeseries in on line of code
+```
+
+![](README_files/figure-gfm/unnamed-chunk-38-1.png)<!-- -->
+
+``` r
+train <- tourism_melb %>% filter_index(~'2015 Q4') # filter time series from start to 4Q 2015
+fit <- train %>% # create multiple AUTO-tuning models for each time series by tsibble key
+  model(
+    ets = ETS(Trips ~ trend("A")), # auto Exponential models (HOLT, HOLT-Winters,...etc)
+    arima = ARIMA(Trips), # auto ARIMA
+    snaive=SNAIVE(Trips), # seasonal NAIVE
+    #tslm=TSLM(log(Trips)~ trend() + season()),  # YOU MAY (UN)COMMENT ANY MODEL WITHOUT CODE CORRECTION BELOW!!! (regression with trend + seasonal)
+    theta=THETA(Trips), # theta model
+    prophet=prophet(Trips~ season("year", 4, type = "multiplicative"))
+    ) %>% 
+  mutate(combine=(ets+arima+snaive+prophet+theta)/5) # create model ensemble
+fit
+```
+
+    ## # A mable: 4 x 7
+    ## # Key:     Purpose [4]
+    ##   Purpose           ets        arima   snaive   theta   prophet       combine
+    ##   <chr>         <model>      <model>  <model> <model>   <model>       <model>
+    ## 1 Business <ETS(A,A,A)> <NULL model> <SNAIVE> <THETA> <prophet> <COMBINATION>
+    ## 2 Holiday  <ETS(M,A,A)> <NULL model> <SNAIVE> <THETA> <prophet> <COMBINATION>
+    ## 3 Other    <ETS(M,A,N)> <NULL model> <SNAIVE> <THETA> <prophet> <COMBINATION>
+    ## 4 Visiting <ETS(A,A,A)> <NULL model> <SNAIVE> <THETA> <prophet> <COMBINATION>
+
+``` r
+fc <- fit %>% forecast(h = "2 years") # create forecasts from each model for each timeseries
+fc
+```
+
+    ## # A fable: 192 x 5 [1Q]
+    ## # Key:     Purpose, .model [24]
+    ##    Purpose  .model Quarter        Trips .mean
+    ##    <chr>    <chr>    <qtr>       <dist> <dbl>
+    ##  1 Business ets    2016 Q1 N(470, 3380)  470.
+    ##  2 Business ets    2016 Q2 N(546, 3470)  546.
+    ##  3 Business ets    2016 Q3 N(562, 3560)  562.
+    ##  4 Business ets    2016 Q4 N(530, 3651)  530.
+    ##  5 Business ets    2017 Q1 N(475, 3741)  475.
+    ##  6 Business ets    2017 Q2 N(551, 3831)  551.
+    ##  7 Business ets    2017 Q3 N(567, 3922)  567.
+    ##  8 Business ets    2017 Q4 N(535, 4012)  535.
+    ##  9 Business arima  2016 Q1           NA   NA 
+    ## 10 Business arima  2016 Q2           NA   NA 
+    ## # … with 182 more rows
+
+``` r
+fc %>% autoplot(tourism_melb) # plot forecast and actual values by one line of code
+```
+
+![](README_files/figure-gfm/unnamed-chunk-40-1.png)<!-- -->
+
+``` r
+ac <- fc %>% accuracy(data = tourism_melb,measures = list(mape=MAPE, rmse=RMSE)) %>% 
+  relocate(Purpose,.before = .model)%>% arrange(Purpose,rmse) # evaluate models accuracy by test period (>'2015 Q4')
+ac
+```
+
+    ## # A tibble: 24 × 5
+    ##    Purpose  .model  .type   mape  rmse
+    ##    <chr>    <chr>   <chr>  <dbl> <dbl>
+    ##  1 Business prophet Test   11.4   84.0
+    ##  2 Business snaive  Test   15.1  111. 
+    ##  3 Business ets     Test   15.2  116. 
+    ##  4 Business theta   Test   16.0  122. 
+    ##  5 Business arima   Test  NaN    NaN  
+    ##  6 Business combine Test  NaN    NaN  
+    ##  7 Holiday  prophet Test    7.27  72.4
+    ##  8 Holiday  ets     Test    7.78  76.7
+    ##  9 Holiday  theta   Test    7.91  84.3
+    ## 10 Holiday  snaive  Test    9.46  88.7
+    ## # … with 14 more rows
+
+``` r
+best_ac <- ac %>% group_by(Purpose) %>% arrange(rmse) %>% slice(1) %>% ungroup() # get best model for each time series by min(rmse)
+best_ac # we can see that for 'Business' and 'Holiday'  it prophet, for 'Other' and 'Visiting' - ARIMA 
+```
+
+    ## # A tibble: 4 × 5
+    ##   Purpose  .model  .type  mape  rmse
+    ##   <chr>    <chr>   <chr> <dbl> <dbl>
+    ## 1 Business prophet Test  11.4   84.0
+    ## 2 Holiday  prophet Test   7.27  72.4
+    ## 3 Other    ets     Test   7.60  14.1
+    ## 4 Visiting prophet Test  11.2  101.
+
+``` r
+fc_bestmodels <- fc %>% inner_join(best_ac,by = c('Purpose','.model')) %>% tibble() %>% 
+  select(Purpose,  Quarter, frcst_val = .mean,.model) # get best forecast values
+fc_bestmodels
+```
+
+    ## # A tibble: 32 × 4
+    ##    Purpose  Quarter frcst_val .model 
+    ##    <chr>      <qtr>     <dbl> <chr>  
+    ##  1 Business 2016 Q1      478. prophet
+    ##  2 Business 2016 Q2      565. prophet
+    ##  3 Business 2016 Q3      609. prophet
+    ##  4 Business 2016 Q4      574. prophet
+    ##  5 Business 2017 Q1      493. prophet
+    ##  6 Business 2017 Q2      588. prophet
+    ##  7 Business 2017 Q3      628. prophet
+    ##  8 Business 2017 Q4      586. prophet
+    ##  9 Holiday  2016 Q1      688. prophet
+    ## 10 Holiday  2016 Q2      622. prophet
+    ## # … with 22 more rows
+
+## Feature extraction for clustering or search unusual time series
+
+Below is a small example of how to use the [feasts
+package](https://feasts.tidyverts.org/) extract characteristics from
+time series for their subsequent clustering or search for unusual
+examples after dimension compression
+
+``` r
+# https://robjhyndman.com/hyndsight/fbtsa/
+# Compute features
+tourism # 304 timeseries (key[304] in table title)
+```
+
+    ## # A tsibble: 24,320 x 5 [1Q]
+    ## # Key:       Region, State, Purpose [304]
+    ##    Quarter Region   State           Purpose  Trips
+    ##      <qtr> <chr>    <chr>           <chr>    <dbl>
+    ##  1 1998 Q1 Adelaide South Australia Business  135.
+    ##  2 1998 Q2 Adelaide South Australia Business  110.
+    ##  3 1998 Q3 Adelaide South Australia Business  166.
+    ##  4 1998 Q4 Adelaide South Australia Business  127.
+    ##  5 1999 Q1 Adelaide South Australia Business  137.
+    ##  6 1999 Q2 Adelaide South Australia Business  200.
+    ##  7 1999 Q3 Adelaide South Australia Business  169.
+    ##  8 1999 Q4 Adelaide South Australia Business  134.
+    ##  9 2000 Q1 Adelaide South Australia Business  154.
+    ## 10 2000 Q2 Adelaide South Australia Business  169.
+    ## # … with 24,310 more rows
+
+``` r
+tourism_features <- tourism %>% features(Trips, feature_set(pkgs="feasts"))
+tourism_features # 50(!!!) features extracted for each time series by 1 line of code
+```
+
+    ## # A tibble: 304 × 45
+    ##    Region         State Purpose trend_strength seasonal_streng… seasonal_peak_y…
+    ##    <chr>          <chr> <chr>            <dbl>            <dbl>            <dbl>
+    ##  1 Adelaide       Sout… Busine…          0.464            0.407                3
+    ##  2 Adelaide       Sout… Holiday          0.554            0.619                1
+    ##  3 Adelaide       Sout… Other            0.746            0.202                2
+    ##  4 Adelaide       Sout… Visiti…          0.435            0.452                1
+    ##  5 Adelaide Hills Sout… Busine…          0.464            0.179                3
+    ##  6 Adelaide Hills Sout… Holiday          0.528            0.296                2
+    ##  7 Adelaide Hills Sout… Other            0.593            0.404                2
+    ##  8 Adelaide Hills Sout… Visiti…          0.488            0.254                0
+    ##  9 Alice Springs  Nort… Busine…          0.534            0.251                0
+    ## 10 Alice Springs  Nort… Holiday          0.381            0.832                3
+    ## # … with 294 more rows, and 39 more variables: seasonal_trough_year <dbl>,
+    ## #   spikiness <dbl>, linearity <dbl>, curvature <dbl>, stl_e_acf1 <dbl>,
+    ## #   stl_e_acf10 <dbl>, acf1 <dbl>, acf10 <dbl>, diff1_acf1 <dbl>,
+    ## #   diff1_acf10 <dbl>, diff2_acf1 <dbl>, diff2_acf10 <dbl>, season_acf1 <dbl>,
+    ## #   pacf5 <dbl>, diff1_pacf5 <dbl>, diff2_pacf5 <dbl>, season_pacf <dbl>,
+    ## #   zero_run_mean <dbl>, nonzero_squared_cv <dbl>, zero_start_prop <dbl>,
+    ## #   zero_end_prop <dbl>, lambda_guerrero <dbl>, nsdiffs <int>, bp_stat <dbl>, …
+
+``` r
+# Unusual time series can be identified by first doing a principal components decomposition
+pcs <- tourism_features %>% select(-State, -Region, -Purpose) %>% prcomp(scale=TRUE) %>% augment(tourism_features) 
+pcs %>% ggplot(aes(x=.fittedPC1, y=.fittedPC2, col=Purpose)) + geom_point() + theme(aspect.ratio=1)
+```
+
+![](README_files/figure-gfm/unnamed-chunk-44-1.png)<!-- -->
+
+``` r
+# We can then identify some unusual series.
+unusual <- pcs %>% filter(.fittedPC1 > 10.5) %>% select(Region, State, Purpose, .fittedPC1, .fittedPC2)
+
+# plot unusual time series by 1 line of code
+tourism %>% semi_join(unusual) %>% autoplot()
+```
+
+![](README_files/figure-gfm/unnamed-chunk-45-1.png)<!-- -->
+
+Achieving the same with python would’ve taken much more code and effort.
+
 # python has no list equivalent class
 
 In R the list data structure let’s one store arbitrary objects in a
@@ -893,8 +1247,9 @@ You can see some of the confusion manifested in this [stack
 overflow](https://stackoverflow.com/questions/41573587/what-is-the-difference-between-venv-pyvenv-pyenv-virtualenv-virtualenvwrappe)
 question.
 
-The *packrat* package in R fulfills the same functionality but one
-rarely **has** to use it. It’s more for maintaining reproducibility.
+The *packrat* or *renv* packages in R fulfills the same functionality
+but one rarely **has** to use them. It’s more for maintaining
+reproducibility.
 
 ## Documentation
 
@@ -909,28 +1264,92 @@ admit).
 
 # Vectorization
 
-Vectorized operations in R are natural unlike python loops.
+In R the basic objects are all vectors and thus vectorized operations
+are natural. In python however the basic objects are lists so one has to
+either use list comprehensions which are less readable and slower or
+convert the lists to numpy arrays to get the same vectorization
+capabilities.
+
+For example let’s say we’d like to multiply all elements of a vector by
+2. In R:
 
 ``` r
-myVector = c(1:5)
+myVector <- 1:5
 myVector * 2
 ```
 
-Unlike in R where vectorization is natural, in Python one needs to
-import external modules to accomplish the same task. As the example
-below shows, in native Python the elements in the list of numbers are
-not multiplied by 2 but instead the list is doubled. To vectorize code
-the Numpy module was imported.
+    ## [1]  2  4  6  8 10
+
+Doing the same for a list would look like this:
+
+``` python
+myList = [1,2,3,4,5]
+[i*2 for i in myList]
+```
+
+    ## [2, 4, 6, 8, 10]
+
+This can be really slow for very large vectors. We could import the
+numpy module to get the same functionality:
 
 ``` python
 import numpy as np
-
-myList = [1, 2, 3, 4, 5]
-myList * 2
-
-myArray = np.array(myList)
-myArray * 2
+myVector = np.arange(1,6,1) # notice how the "to" argument is 6 rather than 5.
+myVector * 2
 ```
+
+    ## array([ 2,  4,  6,  8, 10])
+
+Here’s another example: Suppose we’d like to pick elements of a vector
+based on another boolean/index vector. In R:
+
+``` r
+indexVector <- 1:5
+valueVector <- LETTERS[indexVector]
+greaterThan2 <- indexVector > 2
+valueVector[greaterThan2]
+```
+
+    ## [1] "C" "D" "E"
+
+Using python lists isn’t so straight forward. Based on this stack
+overflow [answer](https://stackoverflow.com/a/3179119) (which got 147
+upvotes - to a question that got 113 upvotes as of 10.6.2021) you’d need
+to use list comprehension like so:
+
+``` python
+indexVector = [1,2,3,4,5]
+valueVector = [r.LETTERS[i - 1] for i in indexVector]
+greaterThan2 = [indexVector[i] > 2 for i in range(len(indexVector))]
+[val for is_good, val in zip(greaterThan2, valueVector) if is_good]
+```
+
+    ## ['C', 'D', 'E']
+
+Way less elegant and possibly slow for large vectors. It’s so un-elegant
+that a special function was written to accomplish the task:
+
+``` python
+from itertools import compress
+list(compress(valueVector, greaterThan2))
+```
+
+    ## ['C', 'D', 'E']
+
+Even that solution is pretty cumbersome compared with the R native way
+of doing it.
+
+One has to use numpy to enjoy the same functionality:
+
+``` python
+import numpy as np
+indexVector = np.arange(1,6)
+valueVector = np.array(r.LETTERS)[indexVector]
+greaterThan2 = indexVector > 2
+valueVector[greaterThan2]
+```
+
+    ## array(['D', 'E', 'F'], dtype='<U1')
 
 <a name="python_better_than_r"></a>
 
@@ -972,6 +1391,15 @@ engine.
 Below is a list of points I might develop into full examples. Feel free
 to pick one and expand on it!
 
+-   A point for python: Classes are easier to understand compared with
+    S3 as the membership definition is more transparently tied to the
+    class. Also figuring out which methods exist for a given class can
+    be challenging in R.
+
+-   Add to pandas index section the annoying part of assigning values to
+    a dataframe slice. See this
+    <https://stackoverflow.com/questions/20625582/how-to-deal-with-settingwithcopywarning-in-pandas>
+
 -   R has great utilities for package writing - roxygen2 for example.
 
 -   Plotting in R is much better This may be a bit subjective as to
@@ -1002,4 +1430,4 @@ to pick one and expand on it!
     data.table and many others. While some functionality may not be
     supported, it can still save a lot of time.
 
--   test editing tools in Rstudio are superb (find and replcae etc)
+-   test editing tools in Rstudio are superb (find and replace etc)
